@@ -7,17 +7,17 @@ from itertools import chain
 
 class CommentTree:
     """Nested list of dicts representing a comment tree."""
-    def __init__(self, *iterable_of_rows):
+    def __init__(self, *iterables_of_rows):
         self.insertion_order = []
         self.mapping = {}
         self._children = {}
         self.output = []
-        self.add(*iterable_of_rows)
+        self.add(*iterables_of_rows)
 
-    def add(self, *iterable_of_rows):
-        if not iterable_of_rows: return
+    def add(self, *iterables_of_rows):
+        if not iterables_of_rows: return
 
-        for row in chain(*iterable_of_rows):
+        for row in chain(*iterables_of_rows):
             rid = row['id']
             if rid not in self.mapping:
                 row = dict(row)
