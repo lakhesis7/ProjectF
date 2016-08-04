@@ -8,7 +8,7 @@ _INTERVALS = (
     ('hour',   timedelta(hours=1),      timedelta(hours=1)),
     ('minute', timedelta(minutes=1),    timedelta(minutes=1)),
     ('second', timedelta(seconds=1),    timedelta(seconds=0)),
-]
+)
 _ZERO_TIMEDELTA = timedelta(0)
 
 def convert_timedelta(td):
