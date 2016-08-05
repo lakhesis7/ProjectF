@@ -151,4 +151,4 @@ class TestHumanize(unittest.TestCase):
             self.assertEqual(self.humanize.convert_timedelta(td), result)
 
 if __name__ == '__main__':
-    unittest.main()
+    unittest.main(s)
