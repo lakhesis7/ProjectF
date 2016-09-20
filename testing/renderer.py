@@ -1,42 +1,107 @@
-from collections import OrderedDict
 import re
+import json
+from collections import OrderedDict
+from utils.time_this import TimeThis
 
-re_USERNAME_MENTIONS = re.compile(r'(?<!\\)\B@(?P<USERNAME>[a-zA-Z0-9][a-zA-Z0-9_]{2,24})\b')
-def transform_username_mentions(m):
-    return {
-        'type': 'link',
-        'prefix': '''<a href='/@{}'>{}</a>'''.format(m.group('USERNAME'), m.group()),
-        'suffix': '',
-        'children': [],
-    }
+class MissingPattern(Exception): pass
 
-re_BOLD_ITALICS = re.compile(r'(?s)(?<!\\)(?P<FORMATTING>\*+)(?P<TEXT>[^*].*?)(?<!\\)\1')
-def transform_bold_italics(m):
-    tag_length = len(m.group('FORMATTING'))
-    return {
-        'type': 'italics' if tag_length == 1 else 'bold' if tag_length == 2 else 'bold_italics',
-        'prefix': '<i>' if tag_length == 1 else '<b>' if tag_length == 2 else '<b><i>',
-        'suffix': '</i>' if tag_length == 1 else '</b>' if tag_length == 2 else '</i></b>',
-        'children': [parse(m.group('TEXT'))]
-    }
+class BarkBrown:
+    def __init__(self, rules):
+        self.mapping = OrderedDict()
+        for rule in rules: self.mapping[rule.tag] = rule
 
-re_CODE_BLOCK = re.compile(r'(?s)(?<!\\)(?P<FORMATTING>`+)(?P<TEXT>[^`].*?)(?<!\\)\1')
-def transform_code_block(m):
-    return '<code>{}</code>'.format(m.group('TEXT'))
+        for rule in self.mapping.values():
+            rule.rules = tuple(self.mapping[r] for r in rule.rules)
+            rule.parse = self.parse
 
-re_EMOTES = re.compile(r'(?<!\\)\B:(?P<EMOTE>[a-zA-Z0-9_]+?):')
-def transform_emotes(m):
-    return '<img {}>'.format(m.group('EMOTE'))
+    def parse(self, text, rules=None):
+        if not text: return text
+        elif rules is None: rules = self.mapping.values()
 
-re_LINKS = re.compile(r'(?si)(?P<IS_IMAGE>!)?(?<!\\)\[\[(?P<LINK>\S+?)( (?P<CAPTION>.*?))?(?<!\\)\]\]')
-def transform_links(m):
-    return '<a {}{}>{}</a>'.format(
-            'image:' if m.group('IS_IMAGE') else '',
-            m.group('LINK'),
-            parse(m.group('CAPTION'), safe=False) or m.group('LINK')
-    )
+        repls = ['{}'] * text.count('{}')  # Maintain any '{}' within the input text
 
-regexes = OrderedDict()
-regexes['code'] = (re.compile(r'(?s)(?<!\\)(?P<FORMATTING>`+)(?P<TEXT>[^`].*?)(?<!\\)\1'), transform_code_block)
+        for rule in rules:
+            while True:
+                m = rule.regex.search(text)
+                if m is None: break
+                preceeding_s = text.count('{}', 0, m.start())
+                within_s = m.group(0).count('{}')
 
-def parse(*args, **kwargs): pass
+                # Replacement's for {}'s within the match's text are replaced with the transform text full fleshed out
+                repls[preceeding_s: preceeding_s + within_s] = [
+                    rule.transform(m).format(*repls[preceeding_s: preceeding_s + within_s])
+                ]
+
+                text = text[:m.start()] + '{}' + text[m.end():]
+
+        return text.format(*repls)
+
+class Rule:
+    tag = None
+    regex = None
+    rules = ()
+
+    def transform(self, match): pass
+
+    def parse(self, text, rules=None): pass
+
+class EscapedChar(Rule):
+    tag = 'escaped'
+    regex = re.compile(r'\\([\\*{\[\]}_^=-])')
+
+    def transform(self, match): return match.group(1)
+
+class CodeBlock(Rule):
+    tag = 'code'
+    regex = re.compile(r'\B{{{([^{}](.|\n)*?)}}}\B')
+
+    def transform(self, match): return 'CC{}CC'.format(match.group(1))
+
+class Link(Rule):
+    tag = 'link'
+    regex = re.compile(r'\[\[(\S+)( (\S+))?\]\]')
+
+    def transform(self, match): return match.group()
+
+
+class UserMention(Rule):
+    tag = 'user_mention'
+    regex = re.compile(r'(@([a-zA-Z0-9][a-zA-Z0-9_]{2,23}[a-zA-Z0-9]))')
+
+    def transform(self, match): return '@@{}@@'.format(match.group(2))
+
+class Emoji(Rule):
+    tag = 'emoji'
+    regex = re.compile(r':(\w+):')
+
+    with open('emoji.json', 'rt') as f:
+        emojis = json.load(f)
+
+    def transform(self, match):
+        try: return ''.join(chr(int(u, base=16)) for u in self.emojis[match.group(1)]['unicode'].split('-'))
+        except KeyError: return self.parse(match.group(1), self.rules)  # TODO
+
+class BoldItalics(Rule):
+    tag = 'bold_italics'
+    regex = re.compile(r'(\*{1,3})([^*].*?)(\1)')
+    rules = ('bold_italics', 'subscript')
+
+    def transform(self, match):
+        format_str = ('i{}i', 'b{}b', 'bi{}ib')[len(match.group(1)) - 1]
+        return format_str.format(self.parse(match.group(2), self.rules))
+
+class Subscript(Rule):
+    tag = 'subscript'
+    regex = re.compile(r'_([^_].*?)_')
+    rules = ('bold_italics', 'subscript')
+
+    def transform(self, match): return '<sub>{}</sub>'.format(self.parse(match.group(1), self.rules))
+
+str_rules = (
+    'escaped',
+    'code',
+    'user_mention',
+    'emoji',
+    'bold_italics',
+    'subscript'
+)
