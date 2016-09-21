@@ -15,8 +15,7 @@ class BarkBrown:
             rule.parse = self.parse
 
     def parse(self, text, rules=None):
-        if not text: return text
-        elif rules is None: rules = self.mapping.values()
+        if rules is None: rules = self.mapping.values()
 
         repls = ['{}'] * text.count('{}')  # Maintain any '{}' within the input text
 
@@ -25,7 +24,7 @@ class BarkBrown:
                 m = rule.regex.search(text)
                 if m is None: break
                 preceeding_s = text.count('{}', 0, m.start())
-                within_s = m.group(0).count('{}')
+                within_s = m.group().count('{}')
 
                 # Replacement's for {}'s within the match's text are replaced with the transform text full fleshed out
                 repls[preceeding_s: preceeding_s + within_s] = [
@@ -96,12 +95,3 @@ class Subscript(Rule):
     rules = ('bold_italics', 'subscript')
 
     def transform(self, match): return '<sub>{}</sub>'.format(self.parse(match.group(1), self.rules))
-
-str_rules = (
-    'escaped',
-    'code',
-    'user_mention',
-    'emoji',
-    'bold_italics',
-    'subscript'
-)
