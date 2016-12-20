@@ -1,135 +1,148 @@
-import re
 import json
-from utils.time_this import TimeThis
+import re
 
-class Pattern:
-    registered_patterns = {}
-    DEFAULT_RULES = []
+class RegexRule:
+    def __init__(self, name, pattern, descent_rules=None, func=None, flags=re.DOTALL | re.MULTILINE):
+        self.name = name
+        self.pattern = pattern
+        self.regex = re.compile(pattern, flags=flags)
+        self.descent_rules = descent_rules or []
+        self.func = func
 
-    def __init_subclass__(cls, pattern, flags=0, rules=(), is_default=True):
-        cls.name = cls.__name__
-        try: cls.regex = re.compile(pattern=pattern, flags=flags)
-        except Exception: raise Exception(pattern)
-        cls.pattern = pattern
-        cls.search = cls.regex.search
-        cls.rules = rules
-        cls.registered_patterns[cls.name] = cls
-        cls.is_default = is_default
-        if is_default: cls.DEFAULT_RULES.append(cls.name)
+    def __str__(self): return f'{self.__class__.__name__}({self.name!r}, {self.pattern!r})'
 
-    @classmethod
-    def transform(cls, match): return match[0]
+    def __repr__(self): return f'{self.__class__.__name__}({self.name!r}, {self.pattern!r})'
 
-    @classmethod
-    def debug(cls, text): return cls.parse(text, rules=(cls.name,))
+class Renderer:
+    DEFAULT_PATTERNS = (
+        RegexRule('CODE', r'(?P<CODE>(?<!\\){{3}(?P<CODE_TEXT>[^{}].*?)(?<!\\)}{3})', ()),
+        RegexRule('ESCAPE', r'(?P<ESCAPE>\\(?P<ESCAPE_TEXT>[-\\*\[\]_^=\n{}]))', ()),
+        RegexRule(
+            'LINK',
+            r'(?P<LINK>\[\[(?P<URL>\S+?) ?(\|(?P<DESCRIPTION>.*?)(?P<EXTENSIONS>(\|.*?)*)\]\])?)',
+            ('ESCAPE', 'EMOJI', 'BOLD_ITALICS', 'SUPERSCRIPT', 'SUBSCRIPT')),
+        RegexRule(
+            'USER_MENTION',
+            r'(?P<USER_MENTION>@(?P<USERNAME>[a-zA-Z0-9][a-zA-Z0-9_]{2,23}[a-zA-Z0-9]))',
+            ()),
+        RegexRule('EMOJI', r'(?P<EMOJI>:(?P<EMOJI_TEXT>\w+):)', ()),  # FIXME: Add specific emoji text regexes
+        RegexRule(
+            'TABLE',
+            r'(?P<TABLE>^(?P<TABLE_FIRSTROW>\|(.*?\|)+?$)(?P<TABLE_OTHERROWS>(\n^\|(.*?\|)+$)+)?)',
+            ('ESCAPE', 'CODE', 'LINK', 'USER_MENTION', 'EMOJI', 'HEADING', 'BULLET_LIST', 'NUMBER_LIST',
+             'BOLD_ITALICS', 'SUPERSCRIPT', 'SUBSCRIPT')),
+        RegexRule(
+            'BULLET_LIST',
+            r'(?P<BULLET_LIST>^\* (?P<BL_FIRSTROW>.*)(?P<BL_OTHERROWS>(\n\*+ .*)*))',
+            ('ESCAPE', 'CODE', 'LINK', 'USER_MENTION', 'EMOJI', 'HEADING', 'BOLD_ITALICS', 'SUPERSCRIPT',
+             'SUBSCRIPT')),
+        RegexRule(
+            'NUMBER_LIST',
+            r'(?P<NUMBER_LIST>^# (?P<NL_FIRSTROW>.*)(?P<NL_OTHERROWS>(\n#+ .*)*))',
+            ('ESCAPE', 'CODE', 'LINK', 'USER_MENTION', 'EMOJI', 'HEADING', 'BOLD_ITALICS', 'SUPERSCRIPT',
+             'SUBSCRIPT')),
+        RegexRule(
+            'HEADING',
+            r'(?P<HEADING>^(?:(?P<HEADING_LEVEL>=+) )(?P<HEADING_TEXT>.+?$))',
+            ('ESCAPE', 'CODE', 'LINK', 'USER_MENTION', 'EMOJI', 'BOLD_ITALICS', 'SUPERSCRIPT', 'SUBSCRIPT')),
+        RegexRule(
+            'BOLD_ITALICS',
+            r'(?P<BOLD_ITALICS>(?P<BI_LEVEL>\*{1,3})(?P<BI_TEXT>[^*].*?)(?P=BI_LEVEL))',
+            ('BOLD_ITALICS', 'SUPERSCRIPT', 'SUBSCRIPT')),
+        RegexRule(
+            'SUPERSCRIPT',
+            r'(?P<SUPERSCRIPT>\^{2}(?P<SUPERSCRIPT_TEXT>[^^].*?)\^{2})',
+            ('BOLD_ITALICS', 'SUPERSCRIPT', 'SUBSCRIPT')),
+        RegexRule(
+            'SUBSCRIPT',
+            r'(?P<SUBSCRIPT>_{2}(?P<SUBSCRIPT_TEXT>[^_].*?)_{2})',
+            ('BOLD_ITALICS', 'SUPERSCRIPT', 'SUBSCRIPT')),
+        RegexRule('HORIZ_RULE', r'(?P<HORIZ_RULE>^-{3,}$)', ()),
+    )
 
-    @classmethod
-    def parse(cls, text, rules=None):
-        if rules is None: rules = cls.rules
+    def __init__(self, patterns=DEFAULT_PATTERNS):
+        for p in patterns:
+            if not isinstance(p, RegexRule):
+                raise TypeError(f'Expected type {RegexRule}, got type {p.__class__}.')
 
-        repls = ['{}'] * text.count('{}')  # Maintain any '{}' within the input text
+        self.patterns = {p.name: p for p in patterns}
 
-        for rule in (cls.registered_patterns[r] for r in rules):
+        self.regexes = {None: tuple(self.patterns.values())}
+        for p in self.patterns.values():
+            self.regexes[p.name] = tuple(map(self.patterns.get, p.descent_rules))
+            if not p.func: p.func = getattr(self, f'parse_{p.name}', self.parse_DEFAULT)
+
+    def parse(self, text, descent_rule=None):
+        text = text.replace('%', '%%')
+        repls = []
+
+        for p in self.regexes[descent_rule]:
             while True:
-                m = rule.search(text)
-                if m is None: break
-                repls_start_index = text.count('{}', 0, m.start())
-                repls_end_index = repls_start_index + m.group().count('{}')
+                match = p.regex.search(text)
+                if not match: break
 
-                # Replacement's for {}'s within the match's text are replaced with the transform text full fleshed out
+                repls_start_index = sum(1 for r in repls if r[1] < match.start())
+                repls_end_index = repls_start_index + sum(1 for r in repls if match.start() <= r[1] <= match.end())
                 repls[repls_start_index: repls_end_index] = [
-                    rule.transform(m).format(*repls[repls_start_index: repls_end_index])
+                    (p.func(match) % tuple(r[0] for r in repls[repls_start_index: repls_end_index]), match.start())
                 ]
 
-                text = text[:m.start()] + '{}' + text[m.end():]
+                text = text[:match.start()] + '%s' + text[match.end():]
 
-        return text.format(*repls)
+        return text % tuple(r[0] for r in repls)
 
-class DefaultPatterns:
-    class EscapedChar(Pattern,
-                      pattern=r'\\(?P<TEXT>[\\*{\[\]}_^=\n\-])'):
-        @classmethod
-        def transform(cls, match): return match['TEXT']
+    def parse_old(self, text, descent_rule=None):
+        repls = ['%s'] * text.count('%s')
 
-    class CodeBlock(Pattern,
-                    pattern=r'\B{{{(?P<TEXT>[^{}].*?)}}}\B', flags=re.DOTALL):
-        @classmethod
-        def transform(cls, match): return 'CC{}CC'.format(match['TEXT'])
+        for p in self.regexes[descent_rule]:
+            while True:
+                m = p.regex.search(text)
+                if not m: break
 
-    class Link(Pattern,
-               pattern=r'\[\[(?P<LINK>\S+?)(\|(?P<DESCRIPTION>(.*?)))?(?P<EXTENSIONS>(\|\S*?)*)\]\]', flags=re.DOTALL,
-               rules=('EscapedChar', 'Emoji', 'BoldItalics', 'Subscript')):
-        extension_mapping = {'spoiler': ':SPOILER', 'nsfw': ':NSFW', 'latex': 'LaTeX'}
+                repls_start_index = text.count('%s', 0, m.start())
+                repls_end_index = repls_start_index + m[0].count('%s')
+                repls[repls_start_index: repls_end_index] = [
+                    p.func(m) % tuple(repls[repls_start_index: repls_end_index])
+                ]
 
-        @classmethod
-        def transform(cls, match):
-            extensions = (e.lower().rstrip('#') for e in match['EXTENSIONS'].split('|') if e)
-            result = 'LINKTO:{}'.format(match['LINK'])
-            if match['DESCRIPTION']: result += ':{}'.format(cls.parse(match['DESCRIPTION']))
-            for k, v in cls.extension_mapping.items():
-                if k in extensions: result += v
-            return result
+                text = text[:m.start()] + '%s' + text[m.end():]
 
-    class UserMention(Pattern,
-                      pattern=r'(?P<TEXT>@(?P<USERNAME>[a-zA-Z0-9][a-zA-Z0-9_]{2,23}[a-zA-Z0-9]))'):
-        @classmethod
-        def transform(cls, match): return '@@{}@@'.format(match['USERNAME'])
+        return text % tuple(repls)
 
-    class Emoji(Pattern,
-                pattern=r':(\w+):'):
-        with open('emoji.json', 'rt') as f:
-            emojis = json.load(f)
+    def parse_DEFAULT(self, match): return match[0]
 
-        @classmethod
-        def transform(cls, match):
-            try: return ''.join(chr(int(u, base=16)) for u in cls.emojis[match[1]]['unicode'].split('-'))
-            except KeyError: return cls.parse(match[1])  # TODO
+    def parse_CODE(self, match): return 'CC' + match['CODE_TEXT'] + 'CC'
 
-    class Table(Pattern,
-                pattern=r'^\|(?P<FIRSTROW>(.*?\|)+$)(?P<OTHERROWS>(\n^\|(.*?\|)+$)+)', flags=re.DOTALL | re.MULTILINE,
-                rules=('EscapedChar', 'CodeBlock', 'Link', 'UserMention',
-                       'Emoji', 'Heading', 'BulletPoint', 'NumberedList',
-                       'BoldItalics', 'Superscript', 'Subscript')):  # TODO
-        @classmethod
-        def transform(cls, match):
-            result = [[cls.parse(r) for r in match['FIRSTROW'].strip().split('|')]]
+    def parse_ESCAPE(self, match): return match['ESCAPE_TEXT']
 
-    class Heading(Pattern,
-                  pattern=r'^(?P<LEVEL>=+) (?P<TEXT>\S.+)', flags=re.MULTILINE,
-                  rules=('EscapedChar', 'CodeBlock', 'Link', 'UserMention',
-                         'Emoji', 'BoldItalics', 'Superscript', 'Subscript')): pass
+    def parse_LINK(self, match):
+        extensions = [e.lower().lstrip('#') for e in match['EXTENSIONS'].split('|') if e]
+        result = 'LINKTO:{}'.format(match['URL'])
+        if match['DESCRIPTION']: result += ':{}'.format(self.parse(match['DESCRIPTION'], 'LINK'))
+        for k, v in {'spoiler': ':SPOILER', 'nsfw': ':NSFW', 'latex': ':LaTeX'}.items():
+            if k in extensions: result += v
+        return result
 
-    class BulletPoint(Pattern,
-                      pattern=r'^\* (.*)(\n\*+ .*)*',  # TODO
-                      rules=('EscapedChar', 'CodeBlock', 'Link', 'UserMention',
-                             'Emoji', 'BoldItalics', 'Superscript', 'Subscript')): pass
+    def parse_USER_MENTION(self, match): return 'LINKTOUSER:{}'.format(match['USERNAME'])
 
-    class NumberedList(Pattern,
-                       pattern=r'^# (.*)(\n#+ .*)*',  # TODO
-                       rules=('EscapedChar', 'CodeBlock', 'Link', 'UserMention',
-                              'Emoji', 'BoldItalics', 'Superscript', 'Subscript')): pass
+    with open('emoji.json', 'rt') as f: EMOJIS = json.load(f)
 
-    class BoldItalics(Pattern,
-                      pattern=r'(?P<LEVEL>\*{1,3})(?P<TEXT>[^*].*?)(\1)', flags=re.DOTALL,
-                      rules=('BoldItalics', 'Superscript', 'Subscript')):
-        @classmethod
-        def transform(cls, match):
-            format_str = ('i{}i', 'b{}b', 'bi{}ib')[len(match['LEVEL']) - 1]
-            return format_str.format(cls.parse(match['TEXT']))
+    def parse_EMOJI(self, match): return match[0]
 
-    class Superscript(Pattern,
-                      pattern=r'\^\^(?P<TEXT>[^^].*?)\^\^',
-                      rules=('BoldItalics', 'Superscript', 'Subscript')):
-        @classmethod
-        def transform(cls, match): return '~sup~{}~/sup~'.format(match['TEXT'])
+    def parse_TABLE(self, match): return match[0]
 
-    class Subscript(Pattern,
-                    pattern=r'__(?P<TEXT>[^_].*?)__',
-                    rules=('BoldItalics', 'Superscript', 'Subscript')):
-        @classmethod
-        def transform(cls, match): return '~sub~{}~/sub~'.format(match['TEXT'])
+    def parse_BULLET_LIST(self, match): return match[0]
 
-    class HorizontalRule(Pattern,
-                         pattern=r'^-{3,}$', flags=re.MULTILINE): pass
+    def parse_NUMBER_LIST(self, match): return match[0]
 
-def parse_text(text): return Pattern.parse(text, rules=Pattern.DEFAULT_RULES)
+    def parse_HEADING(self, match): return match[0]
+
+    def parse_BOLD_ITALICS(self, match):
+        format_str = ('i{}i', 'b{}b', 'bi{}ib')[len(match['BI_LEVEL']) - 1]
+        return format_str.format(self.parse(match['BI_TEXT'], 'BOLD_ITALICS'))
+
+    def parse_SUPERSCRIPT(self, match): return match[0]
+
+    def parse_SUBSCRIPT(self, match): return match[0]
+
+    def parse_HORIZ_RULE(self, match): return match[0]
