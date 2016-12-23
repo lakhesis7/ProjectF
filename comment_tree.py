@@ -1,17 +1,16 @@
-from collections import deque
-from itertools import chain
+from collections import deque, OrderedDict
+from itertools import chain, islice
 
-# class DuplicateComment(Exception): pass
-# class InvalidCommentID(Exception): pass
-# class MissingParentComment(Exception): pass
+class DuplicateCommentError(Exception): pass
+class InvalidIDError(Exception): pass
+class MissingParentError(Exception): pass
 
 class CommentTree:
     """Nested list of dicts representing a comment tree."""
     def __init__(self, *iterables_of_rows):
-        self.insertion_order = []
-        self.mapping = {}
+        self.mapping = OrderedDict()  # {} in future implementation?
         self._children = {}
-        self.output = []
+        self.output = None
         self.add(*iterables_of_rows)
 
     def add(self, *iterables_of_rows):
@@ -21,20 +20,19 @@ class CommentTree:
             rid = row['id']
             if rid not in self.mapping:
                 row = dict(row)
-                self.insertion_order.append(row)
                 self.mapping[rid] = row
                 self.mapping[rid]['children'] = self._children.setdefault(rid, [])
                 self._children.setdefault(row['parent_id'], []).append(row)
             else: self.mapping[rid].update(row)
 
-        self.output, cache = [], {}
-        for row in self.insertion_order:
+        self.output, cache = [], set()
+        for row in self.mapping.values():
             if row['id'] in cache: continue
-            else: cache[row['id']] = None
+            else: cache.add(row['id'])
 
             while row['parent_id'] not in cache and row['parent_id'] in self.mapping:
                 row = self.mapping[row['parent_id']]
-                cache[row['id']] = None
+                cache.add(row['id'])
             if row['parent_id'] not in self.mapping: self.output.append(row)
 
     def delete(self, row_id):
@@ -45,13 +43,11 @@ class CommentTree:
             temp.extend(self._children.pop(row['id']))
             if row['parent_id'] in self._children: self._children[row['parent_id']].remove(row)
             self.mapping.pop(row['id'])
-            self.insertion_order.remove(row)
 
     def copy(self):
-        return CommentTree(self.insertion_order)
+        return CommentTree(self.mapping.values())
 
     def clear(self):
-        self.insertion_order = []
         self.mapping = {}
         self._children = {}
         self.output = []
@@ -76,7 +72,7 @@ class CommentTree:
         return map(self.mapping.__getitem__, sorted(self.mapping, reverse=reverse))
 
     def __len__(self):
-        return len(self.insertion_order)
+        return len(self.mapping)
 
     def __contains__(self, item):
         return item in self.mapping
@@ -84,19 +80,22 @@ class CommentTree:
     def __getitem__(self, item):
         return self.mapping[item]
 
-    def __add__(self, *other):
-        if isinstance(other, CommentTree): self.add(other.insertion_order)
-        else: self.add(*other)
+    def get_index(self, index):
+        return islice(self.mapping.values(), start=index, stop=index+1)
+
+    def __add__(self, other):
+        if isinstance(other, CommentTree): self.add(other.mapping.values())
+        else: self.add(other)
         return self
 
     def __eq__(self, other):
-        if isinstance(other, list): return self.output == other
-        elif isinstance(other, CommentTree): return self.mapping == other.mapping
+        if isinstance(other, CommentTree): return self.mapping == other.mapping
+        elif isinstance(other, list): return self.output == other
         else: return False
 
     def __ne__(self, other):
-        if isinstance(other, list): return self.output != other
-        elif isinstance(other, CommentTree): return self.mapping != other.mapping
+        if isinstance(other, CommentTree): return self.mapping != other.mapping
+        elif isinstance(other, list): return self.output != other
         else: return True
 
     def __bool__(self):
@@ -106,4 +105,4 @@ class CommentTree:
         return self.items()
 
     def __repr__(self):
-        return repr(self.output)
+        return '%s(%r)' % (self.__class__.__name__, self.output)

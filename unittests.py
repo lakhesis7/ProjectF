@@ -1,7 +1,7 @@
 import unittest
 
 class TestCommentTree(unittest.TestCase):
-    from comment_tree import CommentTree
+    from testing.theory_scrap import CommentTree
 
     # 8
     # ├─10

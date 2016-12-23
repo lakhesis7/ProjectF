@@ -74,40 +74,23 @@ class Renderer:
 
     def parse(self, text, descent_rule=None):
         text = text.replace('%', '%%')
-        repls = []
+        replacements = []
 
         for p in self.regexes[descent_rule]:
             while True:
                 match = p.regex.search(text)
                 if not match: break
 
-                repls_start_index = sum(1 for r in repls if r[1] < match.start())
-                repls_end_index = repls_start_index + sum(1 for r in repls if match.start() <= r[1] <= match.end())
-                repls[repls_start_index: repls_end_index] = [
-                    (p.func(match) % tuple(r[0] for r in repls[repls_start_index: repls_end_index]), match.start())
+                match_start, match_end = match.span()
+                replacements_start_index = text.count('%s', 0, match_start)
+                replacements_end_index = replacements_start_index + match[0].count('%s')
+                replacements[replacements_start_index: replacements_end_index] = [
+                    p.func(match) % tuple(replacements[replacements_start_index: replacements_end_index])
                 ]
 
-                text = text[:match.start()] + '%s' + text[match.end():]
+                text = text[:match_start] + '%s' + text[match_end:]
 
-        return text % tuple(r[0] for r in repls)
-
-    def parse_old(self, text, descent_rule=None):
-        repls = ['%s'] * text.count('%s')
-
-        for p in self.regexes[descent_rule]:
-            while True:
-                m = p.regex.search(text)
-                if not m: break
-
-                repls_start_index = text.count('%s', 0, m.start())
-                repls_end_index = repls_start_index + m[0].count('%s')
-                repls[repls_start_index: repls_end_index] = [
-                    p.func(m) % tuple(repls[repls_start_index: repls_end_index])
-                ]
-
-                text = text[:m.start()] + '%s' + text[m.end():]
-
-        return text % tuple(repls)
+        return text % tuple(replacements)
 
     def parse_DEFAULT(self, match): return match[0]
 
