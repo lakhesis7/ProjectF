@@ -10,7 +10,7 @@ class CommentTree:
     def __init__(self, *iterables_of_rows):
         self.mapping = OrderedDict()  # {} in future implementation?
         self._children = {}
-        self.output = None
+        self.output = []
         self.add(*iterables_of_rows)
 
     def add(self, *iterables_of_rows):
@@ -81,7 +81,7 @@ class CommentTree:
         return self.mapping[item]
 
     def get_index(self, index):
-        return islice(self.mapping.values(), start=index, stop=index+1)
+        return next(islice(self.mapping.values(), index, index+1))
 
     def __add__(self, other):
         if isinstance(other, CommentTree): self.add(other.mapping.values())
