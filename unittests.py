@@ -153,5 +153,7 @@ class TestHumanize(unittest.TestCase):
         for td, result in self.expected:
             self.assertEqual(self.humanize.convert_timedelta(td), result)
 
+# TODO: unittests for Renderer
+
 if __name__ == '__main__':
     unittest.main()
