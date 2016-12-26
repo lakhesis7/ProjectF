@@ -68,8 +68,10 @@ class DefaultRenderer(Renderer):
         super().__init__([
             RegexRule('WHITESPACE', r'(?P<WHITESPACE>^\s+|\s+$)', is_default=False),
             RegexRule('NEWLINE', r'(?P<NEWLINE>\r\n|\r)', is_default=False),
-            RegexRule('CODE', r'(?P<CODE>(?<!\\){{3}(?P<CODE_TEXT>.*?)(?<!\\)}{3})', is_default=False),
-            RegexRule('ESCAPE', r'(?P<ESCAPE>\\(?P<ESCAPE_TEXT>[-\\*\[\]_^=\n{}]))', is_default=False),
+            RegexRule(
+                'ESCAPE',
+                r'(?P<ESCAPE>(?<!\\)\\(?P<SINGLE_ESCAPE>.)|(?<!\\){{{(?P<BLOCK_ESCAPE>.+?)}}})',
+                is_default=False),
             RegexRule(
                 'LINK',
                 r'(?P<LINK>'
@@ -85,17 +87,17 @@ class DefaultRenderer(Renderer):
             RegexRule(
                 'TABLE',
                 r'(?P<TABLE>(?-s:^\|(.*?(?<!\\)\|)+(\n\|(.*?(?<!\\)\|)+$)*($|\n)))',
-                ('ESCAPE', 'CODE', 'LINK', 'USER_MENTION', 'EMOJI', 'HEADING', 'BULLET_LIST', 'NUMBER_LIST',
+                ('ESCAPE', 'LINK', 'USER_MENTION', 'EMOJI', 'HEADING', 'BULLET_LIST', 'NUMBER_LIST',
                  'BOLD', 'ITALICS', 'UNDERLINE', 'STRIKETHROUGH', 'SUPERSCRIPT', 'SUBSCRIPT')),
             RegexRule(
                 'BULLET_LIST',
                 r'(?P<BULLET_LIST>^\* .*?$((?<!\\)\n\*+ .*?$)*)',
-                ('ESCAPE', 'CODE', 'LINK', 'USER_MENTION', 'EMOJI', 'HEADING', 'BOLD', 'ITALICS', 'UNDERLINE',
+                ('ESCAPE', 'LINK', 'USER_MENTION', 'EMOJI', 'HEADING', 'BOLD', 'ITALICS', 'UNDERLINE',
                  'STRIKETHROUGH', 'SUPERSCRIPT', 'SUBSCRIPT')),
             RegexRule(
                 'NUMBER_LIST',
                 r'(?P<NUMBER_LIST>^# .*?$((?<!\\)\n#+ .*?$)*)',
-                ('ESCAPE', 'CODE', 'LINK', 'USER_MENTION', 'EMOJI', 'HEADING', 'BOLD', 'ITALICS', 'UNDERLINE',
+                ('ESCAPE', 'LINK', 'USER_MENTION', 'EMOJI', 'HEADING', 'BOLD', 'ITALICS', 'UNDERLINE',
                  'STRIKETHROUGH', 'SUPERSCRIPT', 'SUBSCRIPT')),
             RegexRule(
                 'HEADING',
@@ -133,17 +135,26 @@ class DefaultRenderer(Renderer):
     def pre_WHITESPACE(self, text):
         return self.patterns['WHITESPACE'].regex.sub('', text)
 
+    escape_groups = []
+    def pre_ESCAPE(self, text):
+        self.escape_groups = list(self.patterns['ESCAPE'].regex.finditer(text))
+        return self.patterns['ESCAPE'].regex.sub('\x00', text)
+
+    def post_ESCAPE(self, text):
+        for m in self.escape_groups:
+            if m['SINGLE_ESCAPE']: text = text.replace('\x00', m['SINGLE_ESCAPE'], 1)
+            else: text = text.replace('\x00', f"<code>{m['BLOCK_ESCAPE']}</code>", 1)
+        self.escape_groups = []
+        return text
+
     def pre_NEWLINES(self, text):
         return self.patterns['NEWLINE'].regex.sub('\n', text)
 
     # def transform_NEWLINE(self, match): return '\n'
 
-    def transform_CODE(self, match):
-        if not match['CODE_TEXT']: return ''
-        return '<code>{}</code>'.format(match['CODE_TEXT'])
-
-    def transform_ESCAPE(self, match):
-        return match['ESCAPE_TEXT']
+    # def transform_CODE(self, match):
+    #     if not match['CODE_TEXT']: return ''
+    #     return '<code>{}</code>'.format(match['CODE_TEXT'])
 
     def transform_LINK(self, match):
         result = 'LINKTO:{}'.format(match['URL'])
@@ -233,11 +244,4 @@ class DefaultRenderer(Renderer):
     def transform_HORIZ_RULE(self, match):
         return '<hr>'
 
-# FIXME: **some{{code**text}}
-
 # TODO: """(?P<URL_VALIDATOR>[-a-zA-Z0-9@:%_\+.~#?&//=]{2,256}\.[A-Za-z]{2,4}\b(\/[-a-zA-Z0-9@:%_\+.~#?&//=]*)?)"""
-
-with open('result.html', 'wt', encoding='utf-8') as f:
-    f.write('<html><body>')
-    f.write(DefaultRenderer().parse(''))
-    f.write('</body></html>')
