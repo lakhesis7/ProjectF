@@ -5,7 +5,7 @@ from itertools import chain
 # TODO: Implement common rule patterns as customizable classes
 class RegexRule:
     def __init__(self, name, pattern, descent_rules=None, transform_func=None, is_default=True,
-                 flags=re.DOTALL | re.MULTILINE):
+                 flags=re.DOTALL | re.MULTILINE, **kwargs):
         self.name = name
         self.pattern = pattern
         self.flags = flags
@@ -21,8 +21,26 @@ class RegexRule:
 
     def __str__(self): return f'{self.__class__.__name__}({self.name!r}, {self.pattern!r})'
 
-    def __repr__(self): return f'{self.__class__.__name__}({self.name!r}, {self.pattern!r}, {self.descent_rules!r}, '\
-    f'{self.transform_func!r}, {self.is_default!r}, {self.flags})'
+    def __repr__(self): return f'{self.__class__.__name__}({self.name!r}, {self.pattern!r}, {self.descent_rules!r}, ' \
+                               f'{self.transform_func!r}, {self.is_default!r}, {self.flags})'
+
+class QuotedRegexRule(RegexRule):
+    def __init__(self, name, start_quote, end_quote=None, escape_str=None, **kwargs):
+        self.end_quote = re.escape(end_quote or start_quote)
+        self.start_quote = re.escape(start_quote)
+        self.escape_str = re.escape(escape_str or '')
+        if self.escape_str:
+            self.start_quote = fr'(?<!{self.escape_str})' + self.start_quote
+            self.end_quote = fr'(?<!{self.escape_str})' + self.end_quote
+        super().__init__(name, fr'(?P<{name}>{start_quote}(?P<{name}_TEXT>.*?){end_quote})', **kwargs)
+
+class ListRegexRule(RegexRule):
+    def __init__(self, name, list_char, escape_str=None, **kwargs):
+        self.list_char = re.escape(list_char)
+        self.escape_str = re.escape(escape_str or '')
+        if self.escape_str:
+            self.list_char = fr'(?<!{self.escape_str})' + self.list_char
+        super().__init__(name, f'(?P<{name}>^{list_char} .*?$(\n{list_char}+ .*?$)*)', **kwargs)
 
 class InvalidMatch(Exception): pass
 
