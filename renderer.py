@@ -8,12 +8,21 @@ class RegexRule:
                  flags=re.DOTALL | re.MULTILINE):
         self.name = name
         self.pattern = pattern
+        self.flags = flags
         self.regex = re.compile(pattern, flags=flags)
         self.descent_rules = descent_rules or ()
         self.transform_func = transform_func
         self.is_default = is_default
 
-    def __repr__(self): return f'{self.__class__.__name__}({self.name!r}, {self.pattern!r})'
+    def __eq__(self, other):
+        return isinstance(other, RegexRule) and self.name == other.name and self.regex == other.regex and \
+            self.descent_rules == other.descent_rules and self.transform_func == other.transform_func and \
+            self.is_default == other.is_default
+
+    def __str__(self): return f'{self.__class__.__name__}({self.name!r}, {self.pattern!r})'
+
+    def __repr__(self): return f'{self.__class__.__name__}({self.name!r}, {self.pattern!r}, {self.descent_rules!r}, '\
+    f'{self.transform_func!r}, {self.is_default!r}, {self.flags})'
 
 class InvalidMatch(Exception): pass
 
