@@ -1,7 +1,6 @@
 import html
 import re
 import string
-from itertools import chain
 
 class MissingPattern(Exception): pass
 
