@@ -2632,10 +2632,3 @@ class DefaultRenderer(Renderer):
 
     def _post_BACKSLASH_UNESCAPE(self, text):
         return self._backslash_escape_re.sub(r'\1', text)
-
-d = DefaultRenderer()
-
-from utils.time_this import TimeThis
-
-with TimeThis():
-    d.parse('^^h^^' * 2000)
