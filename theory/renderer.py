@@ -10,19 +10,16 @@ class Renderer:
     def __init__(self,
                  pre_processors=None,
                  patterns=None,
-                 transforms=None,
                  descent_rules=None,
+                 transforms=None,
                  post_processors=None):
         self._pre_processors = pre_processors or []
         self._patterns = patterns or {}
-        self._transforms = transforms or {}
         self._descent_rules = descent_rules or {}
+        self._transforms = transforms or {}
         self._post_processors = post_processors or []
         self._descent_regexes = {}
-        self.compile()
 
-    def compile(self):
-        self._descent_regexes.clear()
         for name, descendees in self._descent_rules.items():
             if descendees: self._descent_regexes[name] = re.compile(
                 '|'.join(self._patterns[descendee_name] for descendee_name in descendees),
@@ -80,23 +77,6 @@ class DefaultRenderer(Renderer):
                 'SUPERSCRIPT' : r'(?P<SUPERSCRIPT>(?<!\\)\^\^(?P<SUPERSCRIPT_TEXT>.*?)(?<!\\)\^\^)',
                 'SUBSCRIPT'   : r'(?P<SUBSCRIPT>(?<!\\)~~(?P<SUBSCRIPT_TEXT>.*?)(?<!\\)~~)',
             },
-            transforms={
-                'CODE'        : self._transform_CODE,
-                'LINK'        : self._transform_LINK,
-                'USER_MENTION': self._transform_USER_MENTION,
-                'EMOJI'       : self._transform_EMOJI,
-                'TABLE'       : self._transform_TABLE,
-                'BULLET_LIST' : self._transform_BULLET_LIST,
-                'NUMBER_LIST' : self._transform_NUMBER_LIST,
-                'HEADING'     : self._transform_HEADING,
-                'HORIZ_RULE'  : self._transform_HORIZ_RULE,
-                'BOLD'        : self._transform_BOLD,
-                'ITALICS'     : self._transform_ITALICS,
-                'UNDERLINE'   : self._transform_UNDERLINE,
-                'STRIKED'     : self._transform_STRIKED,
-                'SUPERSCRIPT' : self._transform_SUPERSCRIPT,
-                'SUBSCRIPT'   : self._transform_SUBSCRIPT,
-            },
             descent_rules={
                 None          : ('CODE', 'LINK', 'USER_MENTION', 'EMOJI', 'TABLE', 'BULLET_LIST', 'NUMBER_LIST',
                                  'HEADING', 'HORIZ_RULE', 'BOLD', 'ITALICS', 'UNDERLINE', 'STRIKED', 'SUPERSCRIPT',
@@ -121,6 +101,23 @@ class DefaultRenderer(Renderer):
                 'SUPERSCRIPT' : ('EMOJI', 'BOLD', 'ITALICS', 'UNDERLINE', 'STRIKED'),
                 'SUBSCRIPT'   : ('EMOJI', 'BOLD', 'ITALICS', 'UNDERLINE', 'STRIKED'),
 
+            },
+            transforms={
+                'CODE'        : self._transform_CODE,
+                'LINK'        : self._transform_LINK,
+                'USER_MENTION': self._transform_USER_MENTION,
+                'EMOJI'       : self._transform_EMOJI,
+                'TABLE'       : self._transform_TABLE,
+                'BULLET_LIST' : self._transform_BULLET_LIST,
+                'NUMBER_LIST' : self._transform_NUMBER_LIST,
+                'HEADING'     : self._transform_HEADING,
+                'HORIZ_RULE'  : self._transform_HORIZ_RULE,
+                'BOLD'        : self._transform_BOLD,
+                'ITALICS'     : self._transform_ITALICS,
+                'UNDERLINE'   : self._transform_UNDERLINE,
+                'STRIKED'     : self._transform_STRIKED,
+                'SUPERSCRIPT' : self._transform_SUPERSCRIPT,
+                'SUBSCRIPT'   : self._transform_SUBSCRIPT,
             },
             post_processors=[
                 self._post_BACKSLASH_UNESCAPE,
@@ -2504,13 +2501,12 @@ class DefaultRenderer(Renderer):
         }
         self._pipe_split = re.compile(r'(?<!\\)\|')
         self._non_printable_table = {c: None for c in range(160) if chr(c) not in string.printable}
-        self._whitespace_re = re.compile(r'(?P<WHITESPACE>^\s+|\s+$)')
-        self._newline_re = re.compile(r'(?P<NEWLINE>\r\n?)')
-        self._table_row_split = re.compile(r'(?<=\|)\n')
-        self._table_cell_split = re.compile(r'\|')
+        self._whitespace_re = re.compile(r'^\s+|\s+$')
+        self._newline_re = re.compile(r'\r\n?')
+        self._table_row_split = re.compile(r'(?<=(?<!\\)\|)\n')
         self._bullet_list_split_re = re.compile(r'(\*+) (.*?)($|(?<!\\)\n)')
         self._number_list_split_re = re.compile(r'(#+) (.*?)($|(?<!\\)\n)')
-        self._backslash_escape_re = re.compile(r'\\([-\\{}\[\]:@#*/_^~])', re.DOTALL)
+        self._backslash_escape_re = re.compile(r'\\([-\\{}\[\]:@#*/_^~|])')
 
     def _pre_NON_PRINTABLE(self, text):
         return text.translate(self._non_printable_table)
@@ -2551,7 +2547,7 @@ class DefaultRenderer(Renderer):
         if match['TABLE_HAS_HEADER']:
             row = rows.pop(0)
             output += '<thead><tr>'
-            for cell in self._table_cell_split.split(row)[1:-1]:
+            for cell in self._pipe_split.split(row)[1:-1]:
                 output += f'<th>{self._parse(cell, "TABLE")}</th>'
             output += '</tr></thead>'
         if not rows: return output + '</table>'
@@ -2559,14 +2555,13 @@ class DefaultRenderer(Renderer):
         output += '<tbody>'
         for row in rows:
             output += '<tr>'
-            for cell in self._table_cell_split.split(row)[1:-1]:
+            for cell in self._pipe_split.split(row)[1:-1]:
                 output += f'<td>{self._parse(cell, "TABLE")}</td>'
             output += '</tr>'
         return output + '</tbody></table>'
 
     def _transform_BULLET_LIST(self, match):
-        rows = [(len(m[0]), self._parse(m[1], 'BULLET_LIST'))
-                for m in self._bullet_list_split_re.findall(match[0])]
+        rows = [(len(m[0]), self._parse(m[1], 'BULLET_LIST')) for m in self._bullet_list_split_re.findall(match[0])]
         current_level = 0
         output = ''
 
@@ -2582,8 +2577,7 @@ class DefaultRenderer(Renderer):
         return output + '</li></ul>' * current_level
 
     def _transform_NUMBER_LIST(self, match):
-        rows = [(len(m[0]), self._parse(m[1], 'NUMBER_LIST'))
-                for m in self._number_list_split_re.findall(match[0])]
+        rows = [(len(m[0]), self._parse(m[1], 'NUMBER_LIST')) for m in self._number_list_split_re.findall(match[0])]
         types = ['1', 'a', 'i']
         current_level = 0
         output = ''
@@ -2628,7 +2622,27 @@ class DefaultRenderer(Renderer):
         return '<sub>{}</sub>'.format(self._parse(match['SUBSCRIPT_TEXT'], 'SUBSCRIPT'))
 
     def _transform_HORIZ_RULE(self, match):
-        return '<hr>'
+        return '<hr />'
 
     def _post_BACKSLASH_UNESCAPE(self, text):
         return self._backslash_escape_re.sub(r'\1', text)
+
+d = DefaultRenderer()
+
+if __name__ == '__main__':
+    from timeit import timeit
+    n = 100
+    s = '**h**' * 2000
+    x = timeit(
+        setup=f'from theory.renderer import d;s = {s!r}',
+        stmt='d.parse(s)',
+        number=n
+    )
+
+    print(
+        f'{x} secs for {n} comments of length {len(s)}',
+        f'{x / n * 1000} msecs/comment',
+        f'{n / x} comments/sec',
+        f'{1000000 * x / n / len(s)} usec/char',
+        f'{n * len(s) / x} chars/sec',
+        sep='\n')
