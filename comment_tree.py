@@ -1,31 +1,32 @@
-from collections import deque, OrderedDict
+from collections import deque, OrderedDict, defaultdict
 from itertools import chain, islice
-import json
 
 class DuplicateCommentError(Exception): pass
-class Missingparent_idError(Exception): pass
+class MissingParentError(Exception): pass
 
 class CommentTree:
     """Nested list of dicts representing a comment tree."""
-    def __init__(self, *iterables_of_rows):
-        self.mapping = OrderedDict()  # {} in future implementations?
-        self._children = {}
+    def __init__(self, *rows):
+        self.mapping = {}
+        self._children = defaultdict(list)
         self.output = []
-        self.add(*iterables_of_rows)
+        self.add(*rows)
 
-    def add(self, *iterables_of_rows, allow_duplicate=True, allow_missing_parent_ids=True):
-        if not iterables_of_rows: return
+    @classmethod
+    def from_row_iterables(cls, *row_iterables):
+        return cls(chain(*row_iterables))
 
-        for row in map(dict, chain(*iterables_of_rows)):
+    def add(self, rows, *, allow_duplicate=True, allow_missing_parent_ids=True):
+        for row in map(dict, rows):
             if row['id'] in self.mapping and not allow_duplicate: raise DuplicateCommentError(row)
             self.mapping[row['id']] = row
-            row['children'] = self._children.setdefault(row['id'], [])
-            self._children.setdefault(row['parent_id'], []).append(row)
+            row['children'] = self._children[row['id']]
+            self._children[row['parent_id']].append(row)
 
         self.output, cache = [], set()
         for rid, row in self.mapping.items():
             if rid in cache: continue
-            else: cache.add(rid)
+            cache.add(rid)
 
             while row['parent_id'] in self.mapping:
                 if row['parent_id'] in cache: break
@@ -33,7 +34,7 @@ class CommentTree:
                 row = self.mapping[row['parent_id']]
             else:
                 if row['parent_id'] is None or allow_missing_parent_ids: self.output.append(row)
-                else: raise Missingparent_idError(row)
+                else: raise MissingParentError(row)
 
     def delete(self, row_id):
         temp = deque((self.mapping[row_id],))
@@ -48,7 +49,7 @@ class CommentTree:
         return CommentTree(self.mapping.values())
 
     def clear(self):
-        self.mapping = OrderedDict()
+        self.mapping = {}
         self._children = {}
         self.output = []
 
@@ -109,19 +110,29 @@ class CommentTree:
     def __iter__(self):
         return self.items()
 
-    def __str__(self):
-        from utils.misc import DTJson
-        return f'{self.__class__.__name__}({json.dumps(self.output, cls=DTJson, indent=4)})'
-
     def __repr__(self):
-        return f'{self.__class__.__name__}({list(self.mapping.values())!r})'
+        return f'{self.__class__.__name__}({self.output!r})'
 
-# d = [
-#     dict(id=10, parent_id=8),    # Child comment before parent_id
-#     dict(id=1, parent_id=None),  # Root comment in between child and parent_id
-#     dict(id=8, parent_id=None),  # Root comment with children present
-#     dict(id=9, parent_id=8),     # Child comment after parent_id
-#     dict(id=13, parent_id=6),    # Orphan comment
-#     dict(id=11, parent_id=9),    # Deep child comment
-#     dict(id=3, parent_id=1),
-# ]
+    def _tojson(self):
+        import json
+        return json.dumps(self.output)
+
+def _generate_data(num_comments=10000, num_parents=25, seed=0):
+    from random import Random
+    RNG = Random(seed)
+
+    if num_parents >= num_comments: raise ValueError('Number of parents exceeds total number ')
+    result = [{'id': i, 'parent_id': None} for i in range(num_parents)]
+    for i in range(num_parents, num_comments, 1):
+        result.append({'id': i, 'parent_id': RNG.choice(result)['id']})
+    RNG.shuffle(result)
+    return result
+
+from utils.time_this import LineProfiler
+
+D = _generate_data()
+
+lp = LineProfiler()
+lp.add_function(CommentTree.add)
+lp.runcall(CommentTree, D)
+print(lp.print_stats())
