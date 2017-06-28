@@ -1,5 +1,5 @@
 from collections import defaultdict, deque, OrderedDict
-from typing import Any, Callable, Iterable, Mapping
+from typing import Any, Callable, Iterable, Iterator, Mapping
 
 class DuplicateCommentError(Exception): pass
 class MissingParentError(Exception): pass
@@ -10,10 +10,10 @@ class CommentTree:
     def __init__(self, comments: Iterable[Comment]=()) -> None:
         self.mapping = OrderedDict()
         self.children = defaultdict(list)
-        self.add(comments)
         self._modified, self._output = False, []
+        if comments: self.add(comments)
 
-    def add(self, comments: Iterable[Comment], *, to_dict_function: Callable[[Comment], dict]=dict) -> None:
+    def add(self, comments: Iterable[Comment], *, to_dict_function: Callable[[Comment], dict]=None) -> None:
         if to_dict_function: comments = map(to_dict_function, comments)
         for comment in comments:
             self.mapping[comment['id']] = comment
@@ -52,10 +52,10 @@ class CommentTree:
     def copy(self):
         return CommentTree(self.mapping.values())
 
-    def clear(self):
+    def clear(self) -> None:
         self.__init__()
 
-    def items(self, method: str='depth'):
+    def items(self, method: str='depth') -> Iterator[Comment]:
         queue = deque(self.output)
         if method not in ('depth', 'breadth'): raise ValueError(method)
         while queue:
@@ -64,37 +64,36 @@ class CommentTree:
             queue.extend(comment['children'])
             if method == 'depth': queue.rotate(len(comment['children']))
 
-    def __len__(self):
+    def __len__(self) -> int:
         return len(self.mapping)
 
-    def __contains__(self, item):
-        return item in self.mapping
+    def __contains__(self, comment_id: str) -> bool:
+        return comment_id in self.mapping
 
-    def __getitem__(self, item):
-        return self.mapping[item]
+    def __getitem__(self, comment_id: str) -> Comment:
+        return self.mapping[comment_id]
 
-    def __delitem__(self, key):
-        if self.mapping[key]['parent_id'] in self.mapping:
-            self.children[self.mapping[key]['parent_id']].remove(self.mapping[key])
-        if not self.children[key]: del self.children[key]
-        del self.mapping[key]
+    def __delitem__(self, comment_id: str) -> None:
+        if self.mapping[comment_id]['parent_id'] in self.mapping:
+            self.children[self.mapping[comment_id]['parent_id']].remove(self.mapping[comment_id])
+        if not self.children[comment_id]: del self.children[comment_id]
+        del self.mapping[comment_id]
 
-    def __bool__(self):
+    def __bool__(self) -> bool:
         return bool(self.mapping)
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[Comment]:
         return self.items(method='depth')
 
-    def __repr__(self):
-        return f'{self.__class__.__name__}({self.output!r})'
+    def __str__(self) -> str:
+        return f'{self.__class__.__name__}<{self.output!r}>'
 
-    def _json(self):
-        import json
-        return json.dumps(self.output)
+    def __repr__(self) -> str:
+        return f'{self.__class__.__name__}({self.mapping!r})'
 
-    def _pprint(self):
+    def _json(self):  # DEBUG: Possibly keep?
         import json
-        print(json.dumps(self.output, indent=4))
+        return json.dumps(self.output, indent=4)
 
     @classmethod
     def _benchmark(cls, n_comments=500, n_trees=1000):
@@ -124,7 +123,7 @@ class CommentTree:
             f'        {1000 * result / n_trees / n_comments * 100000:0.3f} msec per 100k comments',
         ]), sep='\n')
 
-def _generate_data(num_comments=10000, num_parents=25, seed=0, start_index=0):
+def _generate_data(num_comments=10000, num_parents=25, seed=0, start_index=0):  # DEBUG
     from random import Random
     RNG = Random(seed)
 
@@ -143,6 +142,6 @@ if __name__ == '__main__':
     lp.add_function(CommentTree.add)
     lp.add_function(CommentTree.output.fget)
     lp.run('CommentTree(D).output')
-    lp.print_stats()
+    lp.print_stats(stripzeros=True)
 
     CommentTree._benchmark()
