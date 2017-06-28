@@ -1,80 +1,68 @@
-from collections import deque, OrderedDict, defaultdict
-from itertools import chain, islice
+from collections import defaultdict, deque, OrderedDict
+from typing import Any, Callable, Iterable, Mapping
 
 class DuplicateCommentError(Exception): pass
 class MissingParentError(Exception): pass
+Comment = Mapping[str, Any]
 
 class CommentTree:
     """Nested list of dicts representing a comment tree."""
-    def __init__(self, *rows):
-        self.mapping = {}
-        self._children = defaultdict(list)
-        self.output = []
-        self.add(*rows)
+    def __init__(self, comments: Iterable[Comment]=()) -> None:
+        self.mapping = OrderedDict()
+        self.children = defaultdict(list)
+        self.add(comments)
+        self._modified, self._output = False, []
 
-    @classmethod
-    def from_row_iterables(cls, *row_iterables):
-        return cls(chain(*row_iterables))
+    def add(self, comments: Iterable[Comment], *, to_dict_function: Callable[[Comment], dict]=dict) -> None:
+        if to_dict_function: comments = map(to_dict_function, comments)
+        for comment in comments:
+            self.mapping[comment['id']] = comment
+            comment['children'] = self.children[comment['id']]
+            self.children[comment['parent_id']].append(comment)
+        self._modified, self._output = True, None
 
-    def add(self, rows, *, allow_duplicate=True, allow_missing_parent_ids=True):
-        for row in map(dict, rows):
-            if row['id'] in self.mapping and not allow_duplicate: raise DuplicateCommentError(row)
-            self.mapping[row['id']] = row
-            row['children'] = self._children[row['id']]
-            self._children[row['parent_id']].append(row)
+    @property
+    def output(self) -> list:
+        if not self._modified: return self._output  # DEBUG: comment this line out for line profiling
+        result, cache = [], set()
+        for cid, comment in self.mapping.items():
+            if cid in cache: continue
+            cache.add(cid)
 
-        self.output, cache = [], set()
-        for rid, row in self.mapping.items():
-            if rid in cache: continue
-            cache.add(rid)
-
-            while row['parent_id'] in self.mapping:
-                if row['parent_id'] in cache: break
-                cache.add(row['parent_id'])
-                row = self.mapping[row['parent_id']]
+            while comment['parent_id'] in self.mapping:
+                if comment['parent_id'] in cache: break
+                cache.add(comment['parent_id'])
+                comment = self.mapping[comment['parent_id']]
             else:
-                if row['parent_id'] is None or allow_missing_parent_ids: self.output.append(row)
-                else: raise MissingParentError(row)
+                if comment['parent_id'] not in self.mapping: result.append(comment)
+        self._modified, self._output = False, result
+        return result
 
-    def delete(self, row_id):
-        temp = deque((self.mapping[row_id],))
-        if temp[0] in self.output: self.output.remove(temp[0])
-        while temp:
-            row = temp.popleft()
-            temp.extend(self._children.pop(row['id']))
-            if row['parent_id'] in self._children: self._children[row['parent_id']].remove(row)
-            self.mapping.pop(row['id'])
+    def delete(self, *comment_ids: str) -> None:
+        if not comment_ids: raise ValueError('No comment id(s) given.')
+        for cid in comment_ids:
+            queue = deque((self.mapping[cid],))
+            while queue:
+                comment = queue.popleft()
+                queue.extend(self.children.pop(comment['id']))
+                self.children[comment['parent_id']].remove(comment)
+                self.mapping.pop(comment['id'])
+        self._modified, self._output = True, None
 
     def copy(self):
         return CommentTree(self.mapping.values())
 
     def clear(self):
-        self.mapping = {}
-        self._children = {}
-        self.output = []
+        self.__init__()
 
-    def items(self):
-        temp = deque(self.output)
-        while temp:
-            row = temp.popleft()
-            yield row
-            temp.extendleft(row['children'][::-1])
-
-    def items_breadth_first(self):
-        temp = deque(self.output)
-        while temp:
-            row = temp.popleft()
-            yield row
-            temp.extend(row['children'])
-
-    def items_by_id(self, reverse=False):
-        return map(self.mapping.__getitem__, sorted(self.mapping, reverse=reverse))
-
-    def truncate(self, length):
-        if length >= len(self): return
-        comments = list(self.items())[:length]
-        self.clear()
-        self.add(comments)
+    def items(self, method: str='depth'):
+        queue = deque(self.output)
+        if method not in ('depth', 'breadth'): raise ValueError(method)
+        while queue:
+            comment = queue.popleft()
+            yield comment
+            queue.extend(comment['children'])
+            if method == 'depth': queue.rotate(len(comment['children']))
 
     def __len__(self):
         return len(self.mapping)
@@ -83,56 +71,78 @@ class CommentTree:
         return item in self.mapping
 
     def __getitem__(self, item):
-        if isinstance(item, slice): return list(islice(self.mapping.values(), item.start, item.stop, item.step))
         return self.mapping[item]
 
-    def get_index(self, index):
-        return next(islice(self.mapping.values(), index, index+1))
-
-    def __add__(self, other):
-        if isinstance(other, CommentTree): self.add(other.mapping.values())
-        else: self.add(other)
-        return self
-
-    def __eq__(self, other):
-        if isinstance(other, CommentTree): return self.mapping == other.mapping
-        elif isinstance(other, list): return self.output == other
-        else: return False
-
-    def __ne__(self, other):
-        if isinstance(other, CommentTree): return self.mapping != other.mapping
-        elif isinstance(other, list): return self.output != other
-        else: return True
+    def __delitem__(self, key):
+        if self.mapping[key]['parent_id'] in self.mapping:
+            self.children[self.mapping[key]['parent_id']].remove(self.mapping[key])
+        if not self.children[key]: del self.children[key]
+        del self.mapping[key]
 
     def __bool__(self):
         return bool(self.mapping)
 
     def __iter__(self):
-        return self.items()
+        return self.items(method='depth')
 
     def __repr__(self):
         return f'{self.__class__.__name__}({self.output!r})'
 
-    def _tojson(self):
+    def _json(self):
         import json
         return json.dumps(self.output)
 
-def _generate_data(num_comments=10000, num_parents=25, seed=0):
+    def _pprint(self):
+        import json
+        print(json.dumps(self.output, indent=4))
+
+    @classmethod
+    def _benchmark(cls, n_comments=500, n_trees=1000):
+        from timeit import timeit
+        result = timeit(
+            setup=f'''from comment_tree import _generate_data, CommentTree;D = _generate_data({n_comments})''',
+            stmt='''CommentTree(D).output''',
+            number=n_trees
+        )
+
+        print(*([
+            f'TOTAL TIME: \33[1;34m{result:0.4f} sec\33[0m',
+            f'\33[1;34m{n_trees} x {n_comments} = {n_trees * n_comments} comments\33[0m',
+            f'    \33[1;32m{n_trees / result:0.3f}\33[0m trees per sec',
+            f'       {n_trees / result * 60:0.3f} trees per min',
+            f'       {n_trees / result * 3600:0.3f} trees per hr',
+            f'       {n_trees / result * 86400:0.3f} trees per day',
+            '',
+            f'    \33[1;32m{result / n_trees * 1000:0.3f}\33[0m msecs per tree',
+            f'    \33[1;32m{int(n_trees * n_comments // result):d}\33[0m comments per sec',
+            f'    {1000000 * result / n_trees / n_comments:0.3f} usecs per comment',
+            f'        {1000 * result / n_trees / n_comments * 100:0.3f} msec per 100 comments',
+            f'        {1000 * result / n_trees / n_comments * 250:0.3f} msec per 250 comments',
+            f'        {1000 * result / n_trees / n_comments * 500:0.3f} msec per 500 comments',
+            f'        {1000 * result / n_trees / n_comments * 1000:0.3f} msec per 1000 comments',
+            f'        {1000 * result / n_trees / n_comments * 10000:0.3f} msec per 10000 comments',
+            f'        {1000 * result / n_trees / n_comments * 100000:0.3f} msec per 100k comments',
+        ]), sep='\n')
+
+def _generate_data(num_comments=10000, num_parents=25, seed=0, start_index=0):
     from random import Random
     RNG = Random(seed)
 
-    if num_parents >= num_comments: raise ValueError('Number of parents exceeds total number ')
-    result = [{'id': i, 'parent_id': None} for i in range(num_parents)]
-    for i in range(num_parents, num_comments, 1):
-        result.append({'id': i, 'parent_id': RNG.choice(result)['id']})
+    if num_parents > num_comments: raise ValueError('Number of parents exceeds total number ')
+    result = [{'id': i, 'parent_id': None, 'score': RNG.randint(-500, 5000)} for i in range(start_index, start_index + num_parents)]
+    for i in range(start_index + num_parents, start_index + num_comments, 1):
+        result.append({'id': i, 'parent_id': RNG.choice(result)['id'], 'score': RNG.randint(-500, 5000)})
     RNG.shuffle(result)
     return result
 
-from utils.time_this import LineProfiler
+if __name__ == '__main__':
+    from line_profiler import LineProfiler
+    D = _generate_data()
 
-D = _generate_data()
+    lp = LineProfiler()
+    lp.add_function(CommentTree.add)
+    lp.add_function(CommentTree.output.fget)
+    lp.run('CommentTree(D).output')
+    lp.print_stats()
 
-lp = LineProfiler()
-lp.add_function(CommentTree.add)
-lp.runcall(CommentTree, D)
-print(lp.print_stats())
+    CommentTree._benchmark()
