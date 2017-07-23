@@ -2,9 +2,7 @@ import builtins
 import itertools
 from typing import Iterator, Optional
 
-__all__ = ['DIGITS', 'encode', 'decode', 'range', 'count']
-
-DIGITS = tuple('0123456789abcdefghijklmnopqrstuvwxyz')
+DIGITS = '0123456789abcdefghijklmnopqrstuvwxyz'
 
 def encode(number: int) -> str:
     result, is_neg, number = [], number < 0, abs(number)

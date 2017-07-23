@@ -1,29 +1,69 @@
-import datetime as __d
+from collections import OrderedDict
+from datetime import datetime, timedelta, timezone
+from typing import Optional, Union
 
+# ############## DATETIME ############### #
 TIMEDELTA_INTERVALS = (
-    (__d.timedelta(weeks=52)    , 'year'),
-    (__d.timedelta(days=30.4375), 'month'),
-    (__d.timedelta(weeks=1)     , 'week'),
-    (__d.timedelta(days=1)      , 'day'),
-    (__d.timedelta(hours=1)     , 'hour'),
-    (__d.timedelta(minutes=1)   , 'minute'),
-    (__d.timedelta(seconds=1)   , 'second'),
+    (timedelta(days=365.2425), 'year'),
+    (timedelta(days=30.436875), 'month'),
+    # (timedelta(days=7), 'week'),
+    (timedelta(days=1), 'day'),
+    (timedelta(hours=1), 'hour'),
+    (timedelta(minutes=1), 'minute'),
+    (timedelta(seconds=1), 'second'),
+    # (timedelta(milliseconds=1), 'millisecond'),
+    # (timedelta(microseconds=1), 'microsecond'),
 )
 
-def timedelta(td):
+def timedelta_(td: timedelta) -> str:
     for unit, unit_name in TIMEDELTA_INTERVALS:
         if unit <= td:
-            result = td / unit
-            if result != 1.0: unit_name += 's'
-            return f'{result:.2g} {unit_name} ago'
+            return f'''{td / unit:.1f} {unit_name}s ago'''
     return 'just now'
 
-def datetime(now, other=None):
-    if other is None: other = __d.datetime.utcnow()
-    return timedelta(other - now)
+def timedelta_multi(td: timedelta, max_levels=None):
+    results = OrderedDict()
+    for unit, unit_name in TIMEDELTA_INTERVALS:
+        if td // unit != 0: results[unit_name] = td // unit
+        td %= unit
+    if len(results) == 0: return 'just now'
 
-def strftime(dt=None):
-    if dt is None: dt = __d.datetime.now(__d.timezone.utc)
+    if max_levels is None: max_levels = len(results)
+    else: max_levels = min(max_levels, len(results))
+
+    string = ''
+    for _ in range(1, max_levels):
+        unit_name, value = results.popitem(last=False)
+        string += f'''{value} {unit_name}{'s' if value != 1 else ''}, '''
+    else: string = string[:-2] + ' and '
+    unit_name, value = results.popitem(last=False)
+    return string + f'''{value} {unit_name}{'s' if value != 1 else ''}'''
+
+def datetime_(dt: datetime, now: Optional[datetime] = None) -> str:
+    if now is None: now = datetime.utcnow()
+    if dt.tzinfo != now.tzinfo:
+        tz = dt.tzinfo or now.tzinfo
+        dt, now = dt.astimezone(tz), now.astimezone(tz)
+    return timedelta_(now - dt)
+
+def strftime(dt: Optional[datetime] = None) -> str:
+    if dt is None: dt = datetime.now(timezone.utc)
     return f'{dt:%A, %d %B %Y %H:%M:%S %Z}'  # Monday, 02 January 2017 14:25:37 UTC
 
-def humanize_percentage(pct): return f'{pct:3.1%}'
+# ############### NUMBERS ############### #
+INTEGER_INTERVALS = (
+    (10 ** 18, 'quintillion'),
+    (10 ** 15, 'quadrillion'),
+    (10 ** 12, 'trillion'),
+    (10 ** 9, 'billion'),
+    (10 ** 6, 'million'),
+    (10 ** 3, 'thousand'),
+)
+
+def number(n: Union[int, float]) -> str:
+    for unit, unit_name in INTEGER_INTERVALS:
+        if unit <= n:
+            return f'''{n / unit:.1f} {unit_name}'''
+    return f'''{n:.1f}'''
+
+def percentage(pct: float) -> str: return f'{pct:3.1%}'
