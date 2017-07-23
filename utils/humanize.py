@@ -2,7 +2,7 @@ from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Union
 
-# ############## DATETIME ############### #
+# ############### DATETIME ############### #
 TIMEDELTA_INTERVALS = (
     (timedelta(days=365.2425), 'year'),
     (timedelta(days=30.436875), 'month'),
@@ -48,6 +48,7 @@ def datetime_(dt: datetime, now: Optional[datetime] = None) -> str:
 
 def strftime(dt: Optional[datetime] = None) -> str:
     if dt is None: dt = datetime.now(timezone.utc)
+    elif dt.tzinfo is None: dt = dt.astimezone(timezone.utc)
     return f'{dt:%A, %d %B %Y %H:%M:%S %Z}'  # Monday, 02 January 2017 14:25:37 UTC
 
 # ############### NUMBERS ############### #
