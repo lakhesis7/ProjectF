@@ -21,15 +21,15 @@ def timedelta_(td: timedelta) -> str:
             return f'''{td / unit:.1f} {unit_name}s ago'''
     return 'just now'
 
-def timedelta_multi(td: timedelta, max_levels=None):
+def timedelta_multi(td: timedelta, max_levels: Optional[int] = 2):
     results = OrderedDict()
     for unit, unit_name in TIMEDELTA_INTERVALS:
         if td // unit != 0: results[unit_name] = td // unit
         td %= unit
     if len(results) == 0: return 'just now'
 
-    if max_levels is None: max_levels = len(results)
-    else: max_levels = min(max_levels, len(results))
+    if max_levels: max_levels = min(max_levels, len(results))
+    else: max_levels = len(results)
 
     string = ''
     for _ in range(1, max_levels):
