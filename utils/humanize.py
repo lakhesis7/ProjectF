@@ -1,6 +1,6 @@
 from collections import OrderedDict
 from datetime import datetime, timedelta, timezone
-from typing import Optional, Union
+from typing import Optional
 
 # ############### DATETIME ############### #
 TIMEDELTA_INTERVALS = (
@@ -50,6 +50,9 @@ def strftime(dt: Optional[datetime] = None) -> str:
     if dt is None: dt = datetime.now(timezone.utc)
     elif dt.tzinfo is None: dt = dt.astimezone(timezone.utc)
     return f'{dt:%A, %d %B %Y %H:%M:%S %Z}'  # Monday, 02 January 2017 14:25:37 UTC
+
+def strptime(string: str) -> datetime:
+    return datetime.strptime(string, '%A, %d %B %Y %H:%M:%S %Z')
 
 # ############### NUMBERS ############### #
 def percentage(pct: float) -> str: return f'{pct:3.1%}'
