@@ -53,12 +53,14 @@ def strftime(dt: Optional[datetime] = None) -> str:
 
 # ############### NUMBERS ############### #
 INTEGER_INTERVALS = (
-    (10 ** 18, 'quintillion'),
-    (10 ** 15, 'quadrillion'),
-    (10 ** 12, 'trillion'),
-    (10 ** 9, 'billion'),
-    (10 ** 6, 'million'),
-    (10 ** 3, 'thousand'),
+    (1000 ** 8, 'septillion'),
+    (1000 ** 7, 'sextillion'),
+    (1000 ** 6, 'quintillion'),
+    (1000 ** 5, 'quadrillion'),
+    (1000 ** 4, 'trillion'),
+    (1000 ** 3, 'billion'),
+    (1000 ** 2, 'million'),
+    (1000 ** 1, 'thousand'),
 )
 
 def number(n: Union[int, float]) -> str:
