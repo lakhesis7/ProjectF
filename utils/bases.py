@@ -1,6 +1,6 @@
 import builtins
 import itertools
-from typing import Any, Generator, Iterable, Optional
+from typing import Any, Generator, Iterable, Optional, Tuple
 
 class BaseConverter:
     def __init__(self, digits: str) -> None:
@@ -19,11 +19,12 @@ class BaseConverter:
         return ''.join(reversed(result or self.digits[0]))
 
     def decode(self, string: str) -> int:
-        result, power = 0, 1
+        result, power, is_negative = 0, 1, string.startswith('-')
+        if is_negative: string = string[1::]
         for digit in reversed(string):
-            result += self.index_by_digits[digit] * power
-            power *= self.base
-        return result
+                result += self.index_by_digits[digit] * power
+                power *= self.base
+        return -result if is_negative else result
 
     def range(self, start: int = 0, stop: Optional[int] = None, step: int = 1) -> Generator[str, None, None]:
         if stop is None: start, stop = 0, start
@@ -32,7 +33,7 @@ class BaseConverter:
     def count(self, start: int = 0, step: int = 1) -> Generator[str, None, None]:
         yield from map(self.encode, itertools.count(start, step))
 
-    def enumerate(self, iterable: Iterable[Any]) -> Generator[Any, None, None]:
+    def enumerate(self, iterable: Iterable[Any]) -> Generator[Tuple[int, Any], None, None]:
         yield from zip(self.count(), iterable)
 
 Base2 = BaseConverter(digits='01')
