@@ -52,21 +52,4 @@ def strftime(dt: Optional[datetime] = None) -> str:
     return f'{dt:%A, %d %B %Y %H:%M:%S %Z}'  # Monday, 02 January 2017 14:25:37 UTC
 
 # ############### NUMBERS ############### #
-INTEGER_INTERVALS = (
-    (1000 ** 8, 'septillion'),
-    (1000 ** 7, 'sextillion'),
-    (1000 ** 6, 'quintillion'),
-    (1000 ** 5, 'quadrillion'),
-    (1000 ** 4, 'trillion'),
-    (1000 ** 3, 'billion'),
-    (1000 ** 2, 'million'),
-    (1000 ** 1, 'thousand'),
-)
-
-def number(n: Union[int, float]) -> str:
-    for unit, unit_name in INTEGER_INTERVALS:
-        if unit <= n:
-            return f'''{n / unit:.1f} {unit_name}'''
-    return f'''{n:.1f}'''
-
 def percentage(pct: float) -> str: return f'{pct:3.1%}'
