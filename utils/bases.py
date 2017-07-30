@@ -7,7 +7,7 @@ class BaseConverter:
         if len(digits) <= 1 or len(set(digits)) < len(digits): raise ValueError(digits)
         self.base = len(digits)
         self.digits = digits
-        self.index_by_digits = {d: i for i, d in enumerate(digits)}
+        self.index_by_digit = {d: i for i, d in enumerate(digits)}
 
     def encode(self, number: int) -> str:
         number = int(number)
@@ -22,7 +22,7 @@ class BaseConverter:
         result, power, is_negative = 0, 1, string.startswith('-')
         if is_negative: string = string[1::]
         for digit in reversed(string):
-                result += self.index_by_digits[digit] * power
+                result += self.index_by_digit[digit] * power
                 power *= self.base
         return -result if is_negative else result
 
