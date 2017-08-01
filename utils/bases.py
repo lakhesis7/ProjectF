@@ -1,6 +1,5 @@
 import builtins
 import itertools
-from collections import deque
 from typing import Any, Generator, Iterable, Optional, Tuple
 
 class UnaryConverterError(NotImplementedError): pass
@@ -24,11 +23,9 @@ class BaseConverter:
         return ''.join(reversed(result)) or self.digits[0]
 
     def decode(self, string: str) -> int:
-        string = deque(string)
         result, power, is_negative = 0, 1, string[0] == '-'
-        if is_negative: string.popleft()
-        while string:
-            result += self.index_by_digit[string.pop()] * power
+        for digit in reversed(string[is_negative:]):
+            result += self.index_by_digit[digit] * power
             power *= self.base
         return -result if is_negative else result
 
@@ -51,5 +48,3 @@ Base36 = BaseConverter(digits='0123456789abcdefghijklmnopqrstuvwxyz')
 Base62 = BaseConverter(digits='0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ')
 Base64 = BaseConverter(digits='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_')
 Base85 = BaseConverter(digits='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#$%&()*+-;<=>?@^_`{|}~')
-
-print(Base36.encode())
