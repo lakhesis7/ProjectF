@@ -1,29 +1,35 @@
 import builtins
 import itertools
+from collections import deque
 from typing import Any, Generator, Iterable, Optional, Tuple
 
+class UnaryConverterError(NotImplementedError): pass
+class NonUniqueDigitsError(ValueError): pass
+class EmptyDigitsError(ValueError): pass
 class BaseConverter:
     def __init__(self, digits: str) -> None:
-        if len(digits) <= 1 or len(set(digits)) < len(digits): raise ValueError(digits)
+        if len(digits) == 0: raise EmptyDigitsError(digits)
+        elif len(digits) == 1: raise UnaryConverterError(digits)
+        elif len(set(digits)) < len(digits): raise NonUniqueDigitsError(digits)
         self.base = len(digits)
         self.digits = digits
         self.index_by_digit = {d: i for i, d in enumerate(digits)}
 
     def encode(self, number: int) -> str:
-        number = int(number)
-        result, is_negative, number = [], number < 0, abs(number)
-        while number:
-            result.append(self.digits[number % self.base])
-            number //= self.base
-        if is_negative: result.append('-')
-        return ''.join(reversed(result or self.digits[0]))
+        result, n = [], abs(int(number))
+        while n:
+            result.append(self.digits[n % self.base])
+            n //= self.base
+        if number < 0: result.append('-')
+        return ''.join(reversed(result)) or self.digits[0]
 
     def decode(self, string: str) -> int:
-        result, power, is_negative = 0, 1, string.startswith('-')
-        if is_negative: string = string[1::]
-        for digit in reversed(string):
-                result += self.index_by_digit[digit] * power
-                power *= self.base
+        string = deque(string)
+        result, power, is_negative = 0, 1, string[0] == '-'
+        if is_negative: string.popleft()
+        while string:
+            result += self.index_by_digit[string.pop()] * power
+            power *= self.base
         return -result if is_negative else result
 
     def range(self, start: int = 0, stop: Optional[int] = None, step: int = 1) -> Generator[str, None, None]:
@@ -45,3 +51,5 @@ Base36 = BaseConverter(digits='0123456789abcdefghijklmnopqrstuvwxyz')
 Base62 = BaseConverter(digits='0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ')
 Base64 = BaseConverter(digits='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_')
 Base85 = BaseConverter(digits='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#$%&()*+-;<=>?@^_`{|}~')
+
+print(Base36.encode())
