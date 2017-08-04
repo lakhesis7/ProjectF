@@ -15,7 +15,7 @@ class BaseConverter:
         self.index_by_digit = {d: i for i, d in enumerate(digits)}
 
     def encode(self, number: int) -> str:
-        result, n = [], abs(int(number))
+        result, n = [], abs(number)
         while n:
             result.append(self.digits[n % self.base])
             n //= self.base
@@ -24,7 +24,7 @@ class BaseConverter:
 
     def decode(self, string: str) -> int:
         result, power, is_negative = 0, 1, string[0] == '-'
-        for digit in reversed(string[is_negative:]):
+        for digit in string[-1:0 if is_negative else None:-1]:
             result += self.index_by_digit[digit] * power
             power *= self.base
         return -result if is_negative else result
