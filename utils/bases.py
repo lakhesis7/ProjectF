@@ -7,7 +7,7 @@ class NonUniqueDigitsError(ValueError): pass
 class EmptyDigitsError(ValueError): pass
 class BaseConverter:
     def __init__(self, digits: str) -> None:
-        if len(digits) == 0: raise EmptyDigitsError(digits)
+        if not digits: raise EmptyDigitsError(digits)
         elif len(digits) == 1: raise UnaryConverterError(digits)
         elif len(set(digits)) < len(digits): raise NonUniqueDigitsError(digits)
         self.base = len(digits)
