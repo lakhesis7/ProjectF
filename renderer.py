@@ -131,7 +131,6 @@ class DefaultRenderer(Renderer):
         self._emojis = EMOJIs
         self._pipe_split = re.compile(r'(?<!\\)\|')
         self._non_printable_table = {c: None for c in range(160) if chr(c) not in string.printable}
-        # self._whitespace_re = re.compile(r'^\s+|\s+$')
         self._newline_re = re.compile(r'\r\n?')
         self._table_row_split = re.compile(r'(?<=(?<!\\)\|)\n')
         self._bullet_list_split_re = re.compile(r'(\*+) (.*?)($|(?<!\\)\n)')
@@ -142,7 +141,6 @@ class DefaultRenderer(Renderer):
         return text.translate(self._non_printable_table)
 
     def _pre_WHITESPACE(self, text: str) -> str:
-        # return self._whitespace_re.sub('', text)
         return text.strip()
 
     def _pre_NEWLINE(self, text: str) -> str:
