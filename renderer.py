@@ -1,6 +1,7 @@
 import html
 import re
 import string
+from typing import cast, Callable, Iterable, Mapping, Match, Optional, Pattern
 from utils.emojis import EMOJIs
 
 class MissingPattern(Exception): pass
@@ -9,11 +10,11 @@ class InvalidMatch(Exception): pass
 
 class Renderer:
     def __init__(self,
-                 pre_processors=(),
-                 patterns=(),
-                 descent_rules=(),
-                 transforms=(),
-                 post_processors=()):
+                 pre_processors: Iterable[Callable]=(),
+                 patterns: Mapping[str, cast(Pattern[str], str)]=(),
+                 descent_rules: Mapping[str, Iterable[str]]=(),
+                 transforms: Mapping[str, Callable]=(),
+                 post_processors: Iterable[Callable]=()) -> None:
         self._pre_processors = pre_processors
         self._patterns = patterns
         self._descent_rules = descent_rules
@@ -27,13 +28,13 @@ class Renderer:
                 flags=re.DOTALL | re.MULTILINE,
             )
 
-    def parse(self, text):
+    def parse(self, text: str):
         for p in self._pre_processors: text = p(text)
         text = self._parse(text)
         for p in self._post_processors: text = p(text)
         return text
 
-    def _parse(self, text, rule=None):
+    def _parse(self, text: str, rule: Optional[str]=None):
         output = []
         current_pos, text_length = 0, len(text)
 
@@ -41,11 +42,10 @@ class Renderer:
             match = self._descent_regexes[rule].search(text, current_pos)
             if not match: break
             try:
-                chunk = (text[current_pos:match.start()], self._transforms[match.lastgroup](match))
-                output.extend(chunk)
+                output.append(text[current_pos:match.start()] + self._transforms[match.lastgroup](match))
                 current_pos = match.end()
             except InvalidMatch:
-                output.append(text[0])
+                output.append(text[current_pos])
                 current_pos += 1
         if not output: return text
         output.append(text[current_pos:])
@@ -138,23 +138,23 @@ class DefaultRenderer(Renderer):
         self._number_list_split_re = re.compile(r'(#+) (.*?)($|(?<!\\)\n)')
         self._backslash_escape_re = re.compile(r'\\([-\\{}\[\]:@#*/_^~|])')
 
-    def _pre_NON_PRINTABLE(self, text):
+    def _pre_NON_PRINTABLE(self, text: str) -> str:
         return text.translate(self._non_printable_table)
 
-    def _pre_WHITESPACE(self, text):
+    def _pre_WHITESPACE(self, text: str) -> str:
         # return self._whitespace_re.sub('', text)
         return text.strip()
 
-    def _pre_NEWLINE(self, text):
+    def _pre_NEWLINE(self, text: str) -> str:
         return self._newline_re.sub('\n', text)
 
-    def _pre_HTML_ESCAPE(self, text):
+    def _pre_HTML_ESCAPE(self, text: str) -> str:
         return html.escape(text)
 
-    def _transform_CODE(self, match):
+    def _transform_CODE(self, match: Match) -> str:
         return f'<code>{match["CODE_TEXT"]}</code>'
 
-    def _transform_LINK(self, match):
+    def _transform_LINK(self, match: Match) -> str:
         result = '['
         if match['LINK_URL']: result += f'link to {match["LINK_URL"]} with '
         result += f'text {match["LINK_DESCRIPTION"]}'
@@ -163,16 +163,16 @@ class DefaultRenderer(Renderer):
             if exts: result += f' with attributes {"".join(exts)}'
         return result + ']'
 
-    def _transform_USER_MENTION(self, match):
+    def _transform_USER_MENTION(self, match: Match):
         return f'[link to user {match["USER_MENTION"]}]'
 
-    def _transform_EMOJI(self, match):
+    def _transform_EMOJI(self, match: Match) -> str:
         try:
             return self._emojis[match['EMOJI']]
         except KeyError:
             raise InvalidMatch(match['EMOJI'])
 
-    def _transform_TABLE(self, match):
+    def _transform_TABLE(self, match: Match) -> str:
         rows = self._table_row_split.split(match['TABLE'])
         output = '<table>'
         if match['TABLE_HAS_HEADER']:
@@ -191,7 +191,7 @@ class DefaultRenderer(Renderer):
             output += '</tr>'
         return output + '</tbody></table>'
 
-    def _transform_BULLET_LIST(self, match):
+    def _transform_BULLET_LIST(self, match: Match) -> str:
         rows = [(len(m[0]), self._parse(m[1], 'BULLET_LIST')) for m in self._bullet_list_split_re.findall(match[0])]
         current_level = 0
         output = ''
@@ -207,7 +207,7 @@ class DefaultRenderer(Renderer):
             current_level = row[0]
         return output + '</li></ul>' * current_level
 
-    def _transform_NUMBER_LIST(self, match):
+    def _transform_NUMBER_LIST(self, match: Match) -> str:
         rows = [(len(m[0]), self._parse(m[1], 'NUMBER_LIST')) for m in self._number_list_split_re.findall(match[0])]
         types = ['1', 'a', 'i']
         current_level = 0
@@ -224,38 +224,46 @@ class DefaultRenderer(Renderer):
             current_level = row[0]
         return output + '</li></ol>' * current_level
 
-    def _transform_HEADING(self, match):
+    def _transform_HEADING(self, match: Match) -> str:
         level = min(len(match["HEADING_LEVEL"]), 6)
         return f'<h{level}>{match["HEADING_TEXT"]}</h{level}>'
 
-    def _transform_BOLD(self, match):
+    def _transform_BOLD(self, match: Match) -> str:
         if not match['BOLD_TEXT']: return ''
         return '<b>{}</b>'.format(self._parse(match['BOLD_TEXT'], 'BOLD'))
 
-    def _transform_ITALICS(self, match):
+    def _transform_ITALICS(self, match: Match) -> str:
         if not match['ITALICS_TEXT']: return ''
         return '<i>{}</i>'.format(self._parse(match['ITALICS_TEXT'], 'ITALICS'))
 
-    def _transform_UNDERLINE(self, match):
+    def _transform_UNDERLINE(self, match: Match) -> str:
         if not match['UNDERLINE_TEXT']: return ''
         return '<u>{}</u>'.format(self._parse(match['UNDERLINE_TEXT'], 'UNDERLINE'))
 
-    def _transform_STRIKED(self, match):
+    def _transform_STRIKED(self, match: Match) -> str:
         if not match['STRIKED_TEXT']: return ''
         return '<s>{}</s>'.format(self._parse(match['STRIKED_TEXT'], 'STRIKED'))
 
-    def _transform_SUPERSCRIPT(self, match):
+    def _transform_SUPERSCRIPT(self, match: Match) -> str:
         if not match['SUPERSCRIPT_TEXT']: return ''
         return '<sup>{}</sup>'.format(self._parse(match['SUPERSCRIPT_TEXT'], 'SUPERSCRIPT'))
 
-    def _transform_SUBSCRIPT(self, match):
+    def _transform_SUBSCRIPT(self, match: Match) -> str:
         if not match['SUBSCRIPT_TEXT']: return ''
         return '<sub>{}</sub>'.format(self._parse(match['SUBSCRIPT_TEXT'], 'SUBSCRIPT'))
 
-    def _transform_HORIZ_RULE(self, match):
+    def _transform_HORIZ_RULE(self, match: Match) -> str:
         return '<hr />'
 
-    def _post_BACKSLASH_UNESCAPE(self, text):
+    def _post_BACKSLASH_UNESCAPE(self, text: str) -> str:
         return self._backslash_escape_re.sub(r'\1', text)
 
 d = DefaultRenderer()
+
+if __name__ == '__main__':
+    from line_profiler import LineProfiler
+
+    lp = LineProfiler()
+    lp.add_function(d._parse)
+    lp.runcall(d.parse, '**h**' * 2000)
+    lp.print_stats()
