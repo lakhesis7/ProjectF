@@ -1,7 +1,7 @@
 import html
 import re
 import string
-from typing import cast, Callable, Iterable, Mapping, Match, Optional, Pattern
+from typing import Callable, Iterable, Mapping, Match, Optional, Pattern
 from utils.emojis import EMOJIs
 
 class MissingPattern(Exception): pass
@@ -10,16 +10,17 @@ class InvalidMatch(Exception): pass
 
 class Renderer:
     def __init__(self,
-                 pre_processors: Iterable[Callable]=(),
-                 patterns: Mapping[str, cast(Pattern[str], str)]=(),
-                 descent_rules: Mapping[str, Iterable[str]]=(),
-                 transforms: Mapping[str, Callable]=(),
-                 post_processors: Iterable[Callable]=()) -> None:
-        self._pre_processors = pre_processors
-        self._patterns = patterns
-        self._descent_rules = descent_rules
-        self._transforms = transforms
-        self._post_processors = post_processors
+                 pre_processors: Optional[Iterable[Callable]] = None,
+                 patterns: Optional[Mapping[str, Pattern]] = None,
+                 descent_rules: Optional[Mapping[str, Iterable[str]]] = None,
+                 transforms: Optional[Mapping[str, Callable]] = None,
+                 post_processors: Optional[Iterable[Callable]] = None) -> None:
+        self._pre_processors = pre_processors if pre_processors is not None else []
+        self._patterns = patterns if patterns is not None else {}
+        self._descent_rules = descent_rules if descent_rules is not None else {}
+        self._transforms = transforms if transforms is not None else {}
+        self._post_processors = post_processors if post_processors is not None else []
+
         self._descent_regexes = {}
 
         for name, descendees in self._descent_rules.items():
@@ -34,7 +35,7 @@ class Renderer:
         for p in self._post_processors: text = p(text)
         return text
 
-    def _parse(self, text: str, rule: Optional[str]=None):
+    def _parse(self, text: str, rule: Optional[str] = None):
         output = []
         current_pos, text_length = 0, len(text)
 
@@ -47,6 +48,7 @@ class Renderer:
             except InvalidMatch:
                 output.append(text[current_pos])
                 current_pos += 1
+
         if not output: return text
         output.append(text[current_pos:])
         return ''.join(output)
@@ -54,12 +56,12 @@ class Renderer:
 class DefaultRenderer(Renderer):
     def __init__(self):
         super().__init__(
-            pre_processors=(
+            pre_processors=[
                 self._pre_NON_PRINTABLE,
                 self._pre_WHITESPACE,
                 self._pre_NEWLINE,
                 self._pre_HTML_ESCAPE,
-            ),
+            ],
             patterns={
                 'CODE'        : r'(?P<CODE>(?<!\\)\{\{\{(?P<CODE_TEXT>.*?)\}\}\})',
                 'LINK'        : r'(?P<LINK>(?<!\\)\[\['
@@ -123,9 +125,9 @@ class DefaultRenderer(Renderer):
                 'SUPERSCRIPT' : self._transform_SUPERSCRIPT,
                 'SUBSCRIPT'   : self._transform_SUBSCRIPT,
             },
-            post_processors=(
+            post_processors=[
                 self._post_BACKSLASH_UNESCAPE,
-            ),
+            ],
         )
 
         self._emojis = EMOJIs
@@ -228,30 +230,30 @@ class DefaultRenderer(Renderer):
 
     def _transform_BOLD(self, match: Match) -> str:
         if not match['BOLD_TEXT']: return ''
-        return '<b>{}</b>'.format(self._parse(match['BOLD_TEXT'], 'BOLD'))
+        return f"<b>{self._parse(match['BOLD_TEXT'], 'BOLD')}</b>"
 
     def _transform_ITALICS(self, match: Match) -> str:
         if not match['ITALICS_TEXT']: return ''
-        return '<i>{}</i>'.format(self._parse(match['ITALICS_TEXT'], 'ITALICS'))
+        return f"<i>{self._parse(match['ITALICS_TEXT'], 'ITALICS')}</i>"
 
     def _transform_UNDERLINE(self, match: Match) -> str:
         if not match['UNDERLINE_TEXT']: return ''
-        return '<u>{}</u>'.format(self._parse(match['UNDERLINE_TEXT'], 'UNDERLINE'))
+        return f"<u>{self._parse(match['UNDERLINE_TEXT'], 'UNDERLINE')}</u>"
 
     def _transform_STRIKED(self, match: Match) -> str:
         if not match['STRIKED_TEXT']: return ''
-        return '<s>{}</s>'.format(self._parse(match['STRIKED_TEXT'], 'STRIKED'))
+        return f"<s>{self._parse(match['STRIKED_TEXT'], 'STRIKED')}</s>"
 
     def _transform_SUPERSCRIPT(self, match: Match) -> str:
         if not match['SUPERSCRIPT_TEXT']: return ''
-        return '<sup>{}</sup>'.format(self._parse(match['SUPERSCRIPT_TEXT'], 'SUPERSCRIPT'))
+        return f"<sup>{self._parse(match['SUPERSCRIPT_TEXT'], 'SUPERSCRIPT')}</sup>"
 
     def _transform_SUBSCRIPT(self, match: Match) -> str:
         if not match['SUBSCRIPT_TEXT']: return ''
-        return '<sub>{}</sub>'.format(self._parse(match['SUBSCRIPT_TEXT'], 'SUBSCRIPT'))
+        return f"<sub>{self._parse(match['SUBSCRIPT_TEXT'], 'SUBSCRIPT')}</sub>"
 
     def _transform_HORIZ_RULE(self, match: Match) -> str:
-        return '<hr />'
+        return f'<hr />'
 
     def _post_BACKSLASH_UNESCAPE(self, text: str) -> str:
         return self._backslash_escape_re.sub(r'\1', text)
@@ -263,5 +265,7 @@ if __name__ == '__main__':
 
     lp = LineProfiler()
     lp.add_function(d._parse)
-    lp.runcall(d.parse, '**h**' * 2000)
+    lp.runcall(d.parse, '*****' * 2000)
     lp.print_stats()
+
+print(d.parse('**__hi__**'))
